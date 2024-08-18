@@ -21,6 +21,7 @@ class XModule {
                 console.log('Tweet posted:', task.content);
             } catch (error) {
                 console.error('Failed to process tweet task:', error);
+                await this.taskModule.updateTaskStatus(task._id, 'failed');
             }
         }
     }

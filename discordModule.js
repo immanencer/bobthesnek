@@ -26,7 +26,6 @@ class DiscordModule {
         });
 
         this.client.on('messageCreate', async (message) => {
-
             // Log the message to MongoDB
             await this.collection.insertOne({
                 clientId: this.client.user.id,
@@ -40,7 +39,6 @@ class DiscordModule {
             });
 
             console.log('Message logged:', message.content);
-
         });
 
         this.client.login(process.env.DISCORD_BOT_TOKEN);
@@ -52,9 +50,20 @@ class DiscordModule {
 
         for (const task of tasks) {
             try {
+                if (!task.channelId) {
+                    console.error('No channel ID provided');
+                    await this.taskModule.updateTaskStatus(task._id, 'failed');
+                    continue;
+                }
+
                 const channel = await this.client.channels.fetch(task.channelId);
                 if (channel) {
-                    await channel.send(task.content);
+                    const chunks = this.chunkMessage(task.content);
+
+                    for (const chunk of chunks) {
+                        await channel.send(chunk);
+                    }
+
                     await this.taskModule.updateTaskStatus(task._id, 'completed');
                     console.log('Message sent to channel:', task.channelId);
                 } else {
@@ -64,6 +73,28 @@ class DiscordModule {
                 console.error('Error processing Discord task:', error);
             }
         }
+    }
+
+    // Helper method to chunk messages at double line breaks and ensure each chunk is under 2000 characters
+    chunkMessage(content) {
+        const paragraphs = content.split('\n\n');
+        const chunks = [];
+        let currentChunk = '';
+
+        for (const paragraph of paragraphs) {
+            if (currentChunk.length + paragraph.length + 2 > 2000) { // +2 for potential line breaks
+                chunks.push(currentChunk.trim());
+                currentChunk = paragraph + '\n\n';
+            } else {
+                currentChunk += paragraph + '\n\n';
+            }
+        }
+
+        if (currentChunk.trim().length > 0) {
+            chunks.push(currentChunk.trim());
+        }
+
+        return chunks;
     }
 }
 
