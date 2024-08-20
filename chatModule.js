@@ -1,22 +1,35 @@
-import TaskModule from './taskModule.js';
-import AIModule from './aiModule.js';
-import { MongoClient } from 'mongodb';
+import TaskModule from "./taskModule.js";
+import AIModule from "./aiModule.js";
+import { MongoClient } from "mongodb";
 
 function getDayOfWeek() {
-    const daysOfWeek = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    const daysOfWeek = [
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+    ];
     const today = new Date();
     return daysOfWeek[today.getDay()];
 }
 
-
 class ChatModule {
-    constructor(pollingInterval = 10000, engagementTimeout = 60000, immediateTweet = false) {
+    constructor(
+        pollingInterval = 10000,
+        engagementTimeout = 60000,
+        immediateTweet = true,
+    ) {
         this.taskModule = new TaskModule();
         this.aiModule = new AIModule();
-        this.mongoClient = new MongoClient(process.env.MONGO_URL || 'mongodb://localhost:27017');
-        this.db = this.mongoClient.db('botDB');
-        this.messageCollection = this.db.collection('messages');
-        this.journalCollection = this.db.collection('journalEntries');
+        this.mongoClient = new MongoClient(
+            process.env.MONGO_URL || "mongodb://localhost:27017",
+        );
+        this.db = this.mongoClient.db("botDB");
+        this.messageCollection = this.db.collection("messages");
+        this.journalCollection = this.db.collection("journalEntries");
         this.pollingInterval = pollingInterval;
         this.engagementTimeout = engagementTimeout;
         this.immediateTweet = immediateTweet;
@@ -26,38 +39,53 @@ class ChatModule {
     }
 
     async startPolling() {
-        console.log('ChatModule polling started...');
+        console.log("ChatModule polling started...");
         setInterval(async () => {
             await this.processMessages();
         }, this.pollingInterval);
     }
 
     async processMessages() {
-        const recentMessages = await this.messageCollection.find({
-            createdAt: { $gt: new Date(Date.now() - this.pollingInterval) }
-        }).toArray();
+        const recentMessages = await this.messageCollection
+            .find({
+                createdAt: { $gt: new Date(Date.now() - this.pollingInterval) },
+            })
+            .toArray();
 
         const messagesByChannel = this.groupMessagesByChannel(recentMessages);
 
         for (const [channelId, messages] of Object.entries(messagesByChannel)) {
-            const context = await this.getContextForChannel(channelId, messages);
+            const context = await this.getContextForChannel(
+                channelId,
+                messages,
+            );
             const lastMessage = messages[messages.length - 1];
 
-            const isTurgidSwamp = lastMessage.channelName === 'turgid-swamp';
-            const isMentioningBob = messages.some(msg => msg.content.toLowerCase().includes('bob') || msg.mentions.includes(msg.clientId));
+            const isTurgidSwamp = lastMessage.channelName === "turgid-swamp";
+            const isMentioningBob = messages.some(
+                (msg) =>
+                    msg.content.toLowerCase().includes("bob") ||
+                    msg.mentions.includes(msg.clientId),
+            );
             const isEngagedUser = this.isUserEngaged(lastMessage.authorId);
 
-            if (lastMessage.clientId !== lastMessage.authorId && (isTurgidSwamp || isMentioningBob || isEngagedUser)) {
+            if (
+                lastMessage.clientId !== lastMessage.authorId &&
+                (isTurgidSwamp || isMentioningBob || isEngagedUser)
+            ) {
                 const aiResponse = await this.generateAIResponse(context);
                 this.updateEngagement(lastMessage.authorId, channelId);
                 await this.taskModule.addTask({
-                    type: 'discord',
+                    type: "discord",
                     content: aiResponse,
                     channelId: channelId,
-                    status: 'pending',
+                    status: "pending",
                     createdAt: new Date(),
                 });
-                console.log('ChatModule responded to context in channel:', channelId);
+                console.log(
+                    "ChatModule responded to context in channel:",
+                    channelId,
+                );
             }
         }
     }
@@ -65,18 +93,28 @@ class ChatModule {
     async journalOnStartup() {
         const latestJournalEntry = await this.composeJournalEntry();
         await this.storeJournalEntry(latestJournalEntry);
-        await this.postJournalEntryToDiscord(latestJournalEntry, 'turgid-swamp');
+        await this.postJournalEntryToDiscord(
+            latestJournalEntry,
+            "turgid-swamp",
+        );
     }
 
     async composeJournalEntry() {
         const previousEntries = await this.getPreviousJournalEntries();
         const journalPrompt = `It is ${getDayOfWeek()} Reflect on your experiences, thoughts, and the interactions you've had recently. Use these memories to write a new journal entry. Here's what you remember:\n${previousEntries}`;
-        return await this.aiModule.chatWithAI(journalPrompt, this.defaultSystemPrompt);
+        return await this.aiModule.chatWithAI(
+            journalPrompt,
+            this.defaultSystemPrompt,
+        );
     }
 
     async getPreviousJournalEntries() {
-        const previousEntries = await this.journalCollection.find().sort({ createdAt: -1 }).limit(5).toArray();
-        return previousEntries.map(entry => entry.entry).join('\n\n');
+        const previousEntries = await this.journalCollection
+            .find()
+            .sort({ createdAt: -1 })
+            .limit(5)
+            .toArray();
+        return previousEntries.map((entry) => entry.entry).join("\n\n");
     }
 
     async storeJournalEntry(journalEntry) {
@@ -90,10 +128,10 @@ class ChatModule {
         const targetChannel = await this.findChannelByName(channelName);
         if (targetChannel) {
             await this.taskModule.addTask({
-                type: 'discord',
+                type: "discord",
                 content: journalEntry.trim(),
                 channelId: targetChannel.channelId,
-                status: 'pending',
+                status: "pending",
                 createdAt: new Date(),
             });
             console.log(`Posted journal entry to ${channelName}`);
@@ -101,13 +139,17 @@ class ChatModule {
     }
 
     async findChannelByName(channelName) {
-        const channel = await this.messageCollection.findOne({ channelName: channelName });
+        const channel = await this.messageCollection.findOne({
+            channelName: channelName,
+        });
         return channel;
     }
 
     async scheduleRandomTweet() {
         if (this.immediateTweet) {
-            console.log('Immediate tweet flag is set. Composing and sending a tweet now.');
+            console.log(
+                "Immediate tweet flag is set. Composing and sending a tweet now.",
+            );
             await this.composeAndSendTweet();
             this.immediateTweet = false;
         }
@@ -121,14 +163,20 @@ class ChatModule {
     async composeAndSendTweet() {
         const previousEntries = await this.getPreviousJournalEntries();
         const tweetPrompt = `Based on your recent reflections and memories, compose a SHORT post for X. Here's what you've been thinking about:\n${previousEntries}\n\nTweet MUST be less than 280 characters.`;
-        const tweetContent = await this.aiModule.chatWithAI(tweetPrompt, this.defaultSystemPrompt);
+        const tweetContent = await this.aiModule.chatWithAI(
+            tweetPrompt,
+            this.defaultSystemPrompt,
+        );
         await this.taskModule.addTask({
-            type: 'x',
-            content: tweetContent.trim().substring(0,280),
-            status: 'pending',
+            type: "x",
+            content: tweetContent.trim().substring(0, 280),
+            status: "pending",
             createdAt: new Date(),
         });
-        console.log('Composed and scheduled a new post on X:', tweetContent.trim());
+        console.log(
+            "Composed and scheduled a new post on X:",
+            tweetContent.trim(),
+        );
     }
 
     getRandomDelay() {
@@ -138,9 +186,15 @@ class ChatModule {
     }
 
     async getContextForChannel(channelId, messages) {
-        const recentHistory = await this.messageCollection.find({ channelId }).sort({ createdAt: -1 }).limit(10).toArray();
+        const recentHistory = await this.messageCollection
+            .find({ channelId })
+            .sort({ createdAt: -1 })
+            .limit(10)
+            .toArray();
         const allMessages = [...messages, ...recentHistory.reverse()];
-        return allMessages.map(msg => `${msg.authorUsername}: ${msg.content}`).join('\n');
+        return allMessages
+            .map((msg) => `${msg.authorUsername}: ${msg.content}`)
+            .join("\n");
     }
 
     groupMessagesByChannel(messages) {
@@ -154,17 +208,26 @@ class ChatModule {
     }
 
     isUserEngaged(authorId) {
-        return this.engagedUsers?.has(authorId) && (Date.now() - this.engagedUsers.get(authorId) < this.engagementTimeout);
+        return (
+            this.engagedUsers?.has(authorId) &&
+            Date.now() - this.engagedUsers.get(authorId) <
+                this.engagementTimeout
+        );
     }
 
     updateEngagement(authorId, channelId) {
+        if (!this.engagedUsers) {
+            this.engagedUsers = new Map();
+        }
         this.engagedUsers.set(authorId, Date.now());
         this.engagedUsers.set(channelId, Date.now());
     }
 
     async generateAIResponse(context) {
         const prompt = `${this.defaultSystemPrompt} Always respond with short snakey sentences, *actions*, and emojis. Reflect your current thoughts and memories in your response.`;
-        return await this.aiModule.chatWithAI(`${prompt}\n\nContext:\n${context}\n\nBob: `);
+        return await this.aiModule.chatWithAI(
+            `${prompt}\n\nContext:\n${context}\n\nBob: `,
+        );
     }
 }
 
