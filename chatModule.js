@@ -101,7 +101,10 @@ class ChatModule {
 
     async composeJournalEntry() {
         const previousEntries = await this.getPreviousJournalEntries();
-        const journalPrompt = `It is ${getDayOfWeek()} Reflect on your experiences, thoughts, and the interactions you've had recently. Use these memories to write a new journal entry. Here's what you remember:\n${previousEntries}`;
+        const journalPrompt = `It is ${getDayOfWeek()} Reflect on your experiences, 
+        thoughts, and the interactions you've had recently. 
+        Use these memories to write a new journal entry. 
+        Here's what you remember:\n${previousEntries}`;
         return await this.aiModule.chatWithAI(
             journalPrompt,
             this.defaultSystemPrompt,
@@ -114,7 +117,9 @@ class ChatModule {
             .sort({ createdAt: -1 })
             .limit(5)
             .toArray();
-        return previousEntries.map((entry) => entry.entry).join("\n\n");
+        return previousEntries
+            .map((entry) => entry.entry)
+            .join("\n\n");
     }
 
     async storeJournalEntry(journalEntry) {
@@ -162,7 +167,12 @@ class ChatModule {
 
     async composeAndSendTweet() {
         const previousEntries = await this.getPreviousJournalEntries();
-        const tweetPrompt = `Based on your recent reflections and memories, compose a SHORT post for X. Here's what you've been thinking about:\n${previousEntries}\n\nTweet MUST be less than 280 characters.`;
+        const tweetPrompt = `Based on your recent reflections and memories,
+        compose a SHORT post for X. Here's what you've been thinking about:\n
+        
+        ${previousEntries}\n\n
+        
+        Tweet MUST be less than 280 characters.`;
         const tweetContent = await this.aiModule.chatWithAI(
             tweetPrompt,
             this.defaultSystemPrompt,
@@ -224,7 +234,9 @@ class ChatModule {
     }
 
     async generateAIResponse(context) {
-        const prompt = `${this.defaultSystemPrompt} Always respond with short snakey sentences, *actions*, and emojis. Reflect your current thoughts and memories in your response.`;
+        const prompt = `${this.defaultSystemPrompt} Always
+        respond with short snakey sentences, *actions*, and emojis.
+        Reflect your current thoughts and memories in your response.`;
         return await this.aiModule.chatWithAI(
             `${prompt}\n\nContext:\n${context}\n\nBob: `,
         );
