@@ -111,7 +111,7 @@ class DiscordModule {
         }
     
         return chunks;
-    },
+    }
     
     // Helper method to split long paragraphs if they exceed the 2000-character limit
     splitLongParagraph(paragraph) {
