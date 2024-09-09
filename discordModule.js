@@ -75,27 +75,66 @@ class DiscordModule {
         }
     }
 
-    // Helper method to chunk messages at double line breaks and ensure each chunk is under 2000 characters
     chunkMessage(content) {
-        const paragraphs = content.split('\n\n');
+        const paragraphs = content.split(/\n\s*\n/); // Split by double line breaks or multiple line breaks
         const chunks = [];
         let currentChunk = '';
-
+    
         for (const paragraph of paragraphs) {
-            if (currentChunk.length + paragraph.length + 2 > 2000) { // +2 for potential line breaks
+            const trimmedParagraph = paragraph.trim();
+    
+            if (trimmedParagraph.length === 0) {
+                continue; // Skip empty paragraphs
+            }
+    
+            // If the current paragraph exceeds the limit, split it by sentences or characters
+            if (trimmedParagraph.length > 2000) {
+                const subParagraphs = this.splitLongParagraph(trimmedParagraph);
+                subParagraphs.forEach(sub => {
+                    if (currentChunk.length + sub.length + 2 > 2000) {
+                        chunks.push(currentChunk.trim());
+                        currentChunk = sub;
+                    } else {
+                        currentChunk += '\n\n' + sub;
+                    }
+                });
+            } else if (currentChunk.length + trimmedParagraph.length + 2 > 2000) {
                 chunks.push(currentChunk.trim());
-                currentChunk = paragraph + '\n\n';
+                currentChunk = trimmedParagraph;
             } else {
-                currentChunk += paragraph + '\n\n';
+                currentChunk += (currentChunk.length ? '\n\n' : '') + trimmedParagraph;
             }
         }
-
+    
         if (currentChunk.trim().length > 0) {
             chunks.push(currentChunk.trim());
         }
-
+    
         return chunks;
-    }
+    },
+    
+    // Helper method to split long paragraphs if they exceed the 2000-character limit
+    splitLongParagraph(paragraph) {
+        const sentences = paragraph.match(/[^.!?]+[.!?]*/g) || [paragraph]; // Split by sentence or fallback to the paragraph itself
+    
+        const chunks = [];
+        let currentChunk = '';
+    
+        for (const sentence of sentences) {
+            if (currentChunk.length + sentence.length + 1 > 2000) {
+                chunks.push(currentChunk.trim());
+                currentChunk = sentence;
+            } else {
+                currentChunk += sentence;
+            }
+        }
+    
+        if (currentChunk.trim().length > 0) {
+            chunks.push(currentChunk.trim());
+        }
+    
+        return chunks;
+    }    
 }
 
 export default DiscordModule;
