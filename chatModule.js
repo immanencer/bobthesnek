@@ -18,8 +18,8 @@ function getDayOfWeek() {
 
 class ChatModule {
     constructor(
-        pollingInterval = 10000,
-        engagementTimeout = 60000,
+        pollingInterval = 5 * 1000,
+        engagementTimeout = 5 * 60 * 1000,
         immediateTweet = true,
     ) {
         this.taskModule = new TaskModule();
@@ -101,10 +101,14 @@ class ChatModule {
 
     async composeJournalEntry() {
         const previousEntries = await this.getPreviousJournalEntries();
-        const journalPrompt = `It is ${getDayOfWeek()} Reflect on your experiences, 
+        const recentMemories = await this.getRecentMemories();
+        const journalPrompt = `It is ${getDayOfWeek()}
+        Here are your previous journal entries:\n${previousEntries}
+        Here's what you remember:\n${recentMemories}
+
+        Reflect on your experiences, 
         thoughts, and the interactions you've had recently. 
-        Use these memories to write a new journal entry. 
-        Here's what you remember:\n${previousEntries}`;
+        Use these memories to write a new journal entry. `;
         return await this.aiModule.chatWithAI(
             journalPrompt,
             this.defaultSystemPrompt,
@@ -193,6 +197,18 @@ class ChatModule {
         const minDelay = 2 * 60 * 60 * 1000;
         const maxDelay = 4 * 60 * 60 * 1000;
         return Math.floor(Math.random() * (maxDelay - minDelay + 1)) + minDelay;
+    }
+
+    async getRecentMemories() {
+        const memories = await this.messageCollection
+            .find({})
+            .sort({ createdAt: -1 })
+            .limit(33)
+            .toArray();
+        
+        return memories
+        .map((msg) => `(${msg.channelName}) ${msg.authorUsername}: ${msg.content}`)
+        .join("\n");
     }
 
     async getContextForChannel(channelId, messages) {
