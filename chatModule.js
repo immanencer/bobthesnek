@@ -27,6 +27,13 @@ class ChatModule {
         this.mongoClient = new MongoClient(
             process.env.MONGO_URL || "mongodb://localhost:27017",
         );
+
+        this.mongoClient
+            .connect()
+            .then(() => console.log("Connected to MongoDB"))
+            .catch((err) =>
+                console.error("Failed to connect to MongoDB:", err),
+            );
         this.db = this.mongoClient.db("botDB");
         this.messageCollection = this.db.collection("messages");
         this.journalCollection = this.db.collection("journalEntries");
@@ -34,6 +41,10 @@ class ChatModule {
         this.engagementTimeout = engagementTimeout;
         this.immediateTweet = immediateTweet;
         this.defaultSystemPrompt = "You are Bob, the obsequious snake.";
+        this.engagedUsers = new Map();
+        this.lastResponseTimes = new Map(); // To track the last response per channel
+        this.responseCooldown = 5 * 60 * 1000; // 5 minutes cooldown
+
         this.scheduleRandomTweet();
         this.journalOnStartup();
     }
@@ -55,10 +66,6 @@ class ChatModule {
         const messagesByChannel = this.groupMessagesByChannel(recentMessages);
 
         for (const [channelId, messages] of Object.entries(messagesByChannel)) {
-            const context = await this.getContextForChannel(
-                channelId,
-                messages,
-            );
             const lastMessage = messages[messages.length - 1];
 
             const isTurgidSwamp = lastMessage.channelName === "turgid-swamp";
@@ -68,13 +75,20 @@ class ChatModule {
                     msg.mentions.includes(msg.clientId),
             );
             const isEngagedUser = this.isUserEngaged(lastMessage.authorId);
+            const hasCooldownPassed = this.hasCooldownPassed(channelId);
 
             if (
                 lastMessage.clientId !== lastMessage.authorId &&
-                (isTurgidSwamp || isMentioningBob || isEngagedUser)
+                (isTurgidSwamp || isMentioningBob || isEngagedUser) &&
+                hasCooldownPassed
             ) {
+                const context = await this.getContextForChannel(
+                    channelId,
+                    messages,
+                );
                 const aiResponse = await this.generateAIResponse(context);
                 this.updateEngagement(lastMessage.authorId, channelId);
+                this.updateLastResponseTime(channelId); // Update last response time
                 await this.taskModule.addTask({
                     type: "discord",
                     content: aiResponse,
@@ -88,6 +102,18 @@ class ChatModule {
                 );
             }
         }
+    }
+
+    // Function to check if enough time has passed since the last response
+    hasCooldownPassed(channelId) {
+        const now = Date.now();
+        const lastResponseTime = this.lastResponseTimes.get(channelId) || 0;
+        return now - lastResponseTime >= this.responseCooldown;
+    }
+
+    // Function to update the last response time
+    updateLastResponseTime(channelId) {
+        this.lastResponseTimes.set(channelId, Date.now());
     }
 
     async journalOnStartup() {
@@ -121,9 +147,7 @@ class ChatModule {
             .sort({ createdAt: -1 })
             .limit(5)
             .toArray();
-        return previousEntries
-            .map((entry) => entry.entry)
-            .join("\n\n");
+        return previousEntries.map((entry) => entry.entry).join("\n\n");
     }
 
     async storeJournalEntry(journalEntry) {
@@ -173,9 +197,9 @@ class ChatModule {
         const previousEntries = await this.getPreviousJournalEntries();
         const tweetPrompt = `Based on your recent reflections and memories,
         compose a SHORT post for X. Here's what you've been thinking about:\n
-        
+
         ${previousEntries}\n\n
-        
+
         Tweet MUST be less than 280 characters.`;
         const tweetContent = await this.aiModule.chatWithAI(
             tweetPrompt,
@@ -205,10 +229,13 @@ class ChatModule {
             .sort({ createdAt: -1 })
             .limit(33)
             .toArray();
-        
+
         return memories
-        .map((msg) => `(${msg.channelName}) ${msg.authorUsername}: ${msg.content}`)
-        .join("\n");
+            .map(
+                (msg) =>
+                    `(${msg.channelName}) ${msg.authorUsername}: ${msg.content}`,
+            )
+            .join("\n");
     }
 
     async getContextForChannel(channelId, messages) {
@@ -235,16 +262,13 @@ class ChatModule {
 
     isUserEngaged(authorId) {
         return (
-            this.engagedUsers?.has(authorId) &&
+            this.engagedUsers.has(authorId) &&
             Date.now() - this.engagedUsers.get(authorId) <
                 this.engagementTimeout
         );
     }
 
     updateEngagement(authorId, channelId) {
-        if (!this.engagedUsers) {
-            this.engagedUsers = new Map();
-        }
         this.engagedUsers.set(authorId, Date.now());
         this.engagedUsers.set(channelId, Date.now());
     }
